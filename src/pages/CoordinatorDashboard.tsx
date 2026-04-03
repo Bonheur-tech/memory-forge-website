@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LogOut, Cpu, Search, Filter, FileText, CheckCircle2, Clock, BarChart3, Trophy } from "lucide-react";
+import StaffInbox from "@/components/StaffInbox";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -338,6 +339,8 @@ const CoordinatorDashboard = () => {
           </div>
         )}
       </main>
+
+      <StaffInbox />
     </div>
   );
 };

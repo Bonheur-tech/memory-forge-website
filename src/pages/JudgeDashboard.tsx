@@ -17,6 +17,7 @@ import {
   ChevronDown, ChevronUp, Cpu, X, Github, Download, Users, Mail,
   Building2, Award, AlertCircle, RotateCcw,
 } from "lucide-react";
+import StaffInbox from "@/components/StaffInbox";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -732,6 +733,8 @@ const JudgeDashboard = () => {
           judgeId={user!.id}
         />
       )}
+
+      <StaffInbox />
     </div>
   );
 };
