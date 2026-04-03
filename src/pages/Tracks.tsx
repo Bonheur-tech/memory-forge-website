@@ -6,7 +6,7 @@ const tracks = [
     icon: Brain,
     title: "AI & Machine Learning",
     color: "bg-blue-500/10 text-blue-600",
-    desc: "Build AI solutions that preserve testimonies, detect hate speech, and educate future generations.",
+    desc: "Develop an AI-powered solution to detect, analyze, or prevent the spread of genocide ideology, hate speech, and misinformation on digital platforms while promoting awareness and unity.",
     examples: [
       "AI-powered transcription and translation of survivor testimonies",
       "Natural language processing to detect and flag hate speech online",
@@ -18,7 +18,7 @@ const tracks = [
     icon: Globe,
     title: "Web & Mobile Development",
     color: "bg-green-500/10 text-green-600",
-    desc: "Create platforms for memorial archives, storytelling, and community remembrance.",
+    desc: "Develop innovative web and mobile applications that promote awareness and education about the Genocide against the Tutsi while encouraging unity among youth.",
     examples: [
       "Interactive digital memorial platforms",
       "Mobile apps for genocide education in schools",
