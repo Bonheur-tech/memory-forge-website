@@ -213,7 +213,7 @@ const Index = () => {
           <div className="inline-flex items-center gap-2 mb-8 animate-fade-up">
             <div className="h-px w-8 bg-gradient-to-r from-transparent to-amber-400/60" />
             <span className="glass text-[11px] uppercase tracking-[0.28em] text-amber-300/90 px-4 py-1.5 rounded-full font-body">
-              April 7–9, 2026 &nbsp;·&nbsp; Kigali, Rwanda
+              April 10–20, 2026 &nbsp;·&nbsp; Kigali, Rwanda
             </span>
             <div className="h-px w-8 bg-gradient-to-l from-transparent to-amber-400/60" />
           </div>
