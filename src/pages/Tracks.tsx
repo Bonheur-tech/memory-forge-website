@@ -4,15 +4,16 @@ import { Brain, Globe, Shield } from "lucide-react";
 const tracks = [
   {
     icon: Brain,
-    title: "AI & Machine Learning\nChallenge",
+    title: "AI & Machine Learning<br />Challenge",
     color: "bg-blue-500/10 text-blue-600",
     desc: "Develop an AI-powered solution to detect, analyze, or prevent the spread of genocide ideology, hate speech, and misinformation on digital platforms while promoting awareness and unity.",
     instructions: [
       "Solutions must use safe, ethical, and preferably public datasets.",
       "Application must include a functional AI prototype demonstrating the core concept.",
       "AI models should be designed to detect harmful content and promote positive, educational responses.",
-      "Train and validate your models for accuracy and bias mitigation",
-      "Implement the solution with user-friendly interfaces",
+      "Systems must ensure privacy and data protection, avoiding the use of sensitive personal data without consent",
+      "Projects should demonstrate clear impact, usability, and problem solving.","Projects should demonstrate clear impact, usability, and problem solving.",
+      "Projects must be creative and innovative"
     ],
   },
   {
@@ -21,7 +22,7 @@ const tracks = [
     color: "bg-green-500/10 text-green-600",
     desc: "Develop innovative web and mobile applications that promote awareness and education about the Genocide against the Tutsi while encouraging unity among youth.",
     instructions: [
-      "Identify user needs and define clear project requirements",
+      "Solutions must provide accurate, respectful, and educational content aligned with genocide against the Tutsi.",
       "Design intuitive user interfaces and experiences",
       "Choose appropriate technology stack (React, Flutter, etc.)",
       "Develop and implement core features",
