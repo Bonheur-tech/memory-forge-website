@@ -4,7 +4,7 @@
  * Prevents duplicate scoring (UNIQUE constraint on submission_id + judge_id)
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import {
   Star, LogOut, Trophy, CheckCircle2, Clock, Filter, Search,
   ChevronDown, ChevronUp, Cpu, X, Github, Download, Users, Mail,
-  Building2, Award,
+  Building2, Award, AlertCircle, RotateCcw,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -106,9 +106,43 @@ const parseDescription = (raw: string): ParsedDescription => {
   return result;
 };
 
+// ── Loading Skeleton ──────────────────────────────────────────────────────────
+
+const SkeletonCard = memo(() => (
+  <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-4 animate-pulse">
+    <div className="flex items-start gap-4">
+      <div className="h-10 w-10 rounded-xl bg-slate-200 dark:bg-slate-700" />
+      <div className="flex-1 space-y-2">
+        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-3/4" />
+        <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded w-1/2" />
+      </div>
+    </div>
+  </div>
+));
+
+SkeletonCard.displayName = "SkeletonCard";
+
+// ── Error Alert ───────────────────────────────────────────────────────────────
+
+const ErrorAlert = memo(({ error, onRetry }: { error: string; onRetry: () => void }) => (
+  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
+    <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+    <div className="flex-1">
+      <p className="text-sm font-semibold text-red-900 dark:text-red-300">{error}</p>
+      <p className="text-xs text-red-700 dark:text-red-400 mt-1">Try reloading or contact support if the issue persists.</p>
+    </div>
+    <Button size="sm" variant="outline" onClick={onRetry} className="gap-1.5 shrink-0">
+      <RotateCcw className="h-3.5 w-3.5" />
+      Retry
+    </Button>
+  </div>
+));
+
+ErrorAlert.displayName = "ErrorAlert";
+
 // ── Score Slider ──────────────────────────────────────────────────────────────
 
-const ScoreSlider = ({
+const ScoreSlider = memo(({
   label, desc, value, onChange,
 }: { label: string; desc: string; value: number; onChange: (v: number) => void }) => (
   <div className="space-y-2">
@@ -119,7 +153,9 @@ const ScoreSlider = ({
       </div>
       <span className={`text-xl font-black w-10 text-right ${
         value >= 8 ? "text-emerald-600" : value >= 5 ? "text-amber-600" : "text-red-500"
-      }`}>{value}</span>
+      }`}
+      aria-label={`${label}: ${value} out of 10`}
+      >{value}</span>
     </div>
     <div className="flex items-center gap-2">
       <span className="text-xs text-slate-400 w-3">1</span>
@@ -130,6 +166,7 @@ const ScoreSlider = ({
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="flex-1 h-2 accent-purple-600"
+        aria-label={`${label} score slider`}
       />
       <span className="text-xs text-slate-400 w-4">10</span>
     </div>
@@ -139,11 +176,13 @@ const ScoreSlider = ({
       ))}
     </div>
   </div>
-);
+));
+
+ScoreSlider.displayName = "ScoreSlider";
 
 // ── Scoring Modal ─────────────────────────────────────────────────────────────
 
-const ScoringModal = ({
+const ScoringModal = memo(({
   submission,
   existing,
   onClose,
@@ -165,54 +204,68 @@ const ScoringModal = ({
   });
   const [notes, setNotes]   = useState(existing?.notes ?? "");
   const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const avg = (Object.values(scores).reduce((a, b) => a + b, 0) / 4).toFixed(2);
+  const avg = useMemo(() => (Object.values(scores).reduce((a, b) => a + b, 0) / 4).toFixed(2), [scores]);
 
-  const handleSubmit = async () => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onClose();
+    }
+  }, [onClose]);
+
+  const handleSubmit = useCallback(async () => {
     setSaving(true);
+    setSubmitError(null);
     try {
       if (existing) {
-        // Update existing score
         const { data, error } = await supabase.from("project_scores")
           .update({ ...scores, notes: notes || null })
           .eq("id", existing.id)
           .select()
           .single();
         if (error) throw error;
-        toast({ title: "Score updated!" });
+        toast({ title: "✓ Score updated successfully!" });
         onSaved(data as JudgeScore);
       } else {
-        // Insert new score
         const { data, error } = await supabase.from("project_scores")
           .insert({ submission_id: submission.id, judge_id: judgeId, ...scores, notes: notes || null })
           .select()
           .single();
         if (error) throw error;
-        toast({ title: "Score submitted!" });
+        toast({ title: "✓ Score submitted successfully!" });
         onSaved(data as JudgeScore);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save score.";
+      const msg = err instanceof Error ? err.message : "Failed to save score. Please try again.";
+      setSubmitError(msg);
       toast({ title: msg, variant: "destructive" });
     } finally {
       setSaving(false);
     }
-  };
+  }, [existing, scores, notes, submission.id, judgeId, onSaved, toast]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onKeyDown={handleKeyDown}>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg max-h-[90vh] overflow-y-auto" role="dialog" aria-labelledby="modal-title">
         <div className="flex items-start justify-between p-5 border-b border-slate-100 dark:border-slate-700/50">
           <div>
-            <h3 className="font-bold text-slate-900 dark:text-white text-base">{submission.project_title}</h3>
+            <h3 id="modal-title" className="font-bold text-slate-900 dark:text-white text-base">{submission.project_title}</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{submission.full_name} · {submission.category}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors">
+          <button 
+            onClick={onClose} 
+            className="text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+            aria-label="Close modal"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <div className="p-5 space-y-6">
+          {submitError && <ErrorAlert error={submitError} onRetry={() => handleSubmit()} />}
+
           {CRITERIA.map(({ key, label, desc }) => (
             <ScoreSlider
               key={key}
@@ -225,7 +278,9 @@ const ScoringModal = ({
 
           <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-200 dark:border-purple-700">
             <p className="text-xs text-purple-700 dark:text-purple-300 font-semibold">Average Score</p>
-            <p className="text-3xl font-black text-purple-600 dark:text-purple-400">{avg}<span className="text-sm font-normal">/10</span></p>
+            <p className="text-3xl font-black text-purple-600 dark:text-purple-400">
+              {avg}<span className="text-sm font-normal">/10</span>
+            </p>
           </div>
 
           <div className="space-y-1.5">
@@ -235,14 +290,20 @@ const ScoringModal = ({
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Any observations about this project…"
               rows={3}
-              className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-purple-400 resize-none"
+              className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-purple-400 resize-none transition-colors"
+              aria-label="Judge notes"
             />
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 px-5 pb-5">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={saving} className="bg-purple-600 hover:bg-purple-700 text-white gap-1.5">
+        <div className="flex justify-end gap-3 px-5 pb-5 border-t border-slate-100 dark:border-slate-700/50">
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button 
+            onClick={handleSubmit} 
+            disabled={saving} 
+            className="bg-purple-600 hover:bg-purple-700 text-white gap-1.5 disabled:opacity-50"
+            aria-busy={saving}
+          >
             <Star className="h-4 w-4" />
             {saving ? "Saving…" : existing ? "Update Score" : "Submit Score"}
           </Button>
@@ -250,7 +311,9 @@ const ScoringModal = ({
       </div>
     </div>
   );
-};
+});
+
+ScoringModal.displayName = "ScoringModal";
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
@@ -583,14 +646,11 @@ const JudgeDashboard = () => {
                         <div className="mt-2 text-xs text-slate-600 dark:text-slate-400">
                           <p className="flex items-center gap-1">
                             <Building2 className="h-3.5 w-3.5" />
-                            {sub.school}
+                            {sub.school}{(() => {
+                              const parsed = parseDescription(sub.description);
+                              return parsed.sector ? ` - ${parsed.sector}` : '';
+                            })()}
                           </p>
-                          {(() => {
-                            const parsed = parseDescription(sub.description);
-                            return parsed.sector && (
-                              <p className="mt-1">Sector: {parsed.sector}</p>
-                            );
-                          })()}
                         </div>
                       </div>
 
@@ -630,7 +690,7 @@ const JudgeDashboard = () => {
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600 text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 text-xs font-medium transition-colors"
                               >
                                 <Download className="h-3.5 w-3.5" />
-                                Download File
+                                Download Submitted File
                               </a>
                             )}
                           </div>
@@ -639,29 +699,19 @@ const JudgeDashboard = () => {
 
                       {/* Scores Breakdown */}
                       {score && (
-                        <div>
-                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                            Scores
-                          </p>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            {CRITERIA.map(({ key, label }) => (
-                              <div key={key} className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2.5 text-center">
-                                <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
-                                <p className="text-xl font-black text-purple-600 dark:text-purple-400 mt-0.5">{score[key]}</p>
-                              </div>
-                            ))}
-                          </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+                          {CRITERIA.map(({ key, label }) => (
+                            <div key={key} className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2.5 text-center">
+                              <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
+                              <p className="text-xl font-black text-purple-600 dark:text-purple-400 mt-0.5">{score[key]}</p>
+                            </div>
+                          ))}
                         </div>
                       )}
 
                       {/* Judge Notes */}
                       {score?.notes && (
-                        <div>
-                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-                            Your Notes
-                          </p>
-                          <p className="text-xs text-slate-600 dark:text-slate-400 italic">{score.notes}</p>
-                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 italic">Notes: {score.notes}</p>
                       )}
                     </div>
                   )}
