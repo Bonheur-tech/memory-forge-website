@@ -469,13 +469,13 @@ const Index = () => {
               Choose Your Track
             </h2>
             <p className="text-slate-500 max-w-xl mx-auto font-body">
-              Four pathways to making a difference. Each track challenges you to
+              Three pathways to making a difference. Each track challenges you to
               apply technology to the urgent work of remembrance and prevention.
             </p>
           </div>
 
           {/* Track cards */}
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {TRACKS.map((track, i) => (
               <Link
                 key={track.title}
