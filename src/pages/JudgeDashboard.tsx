@@ -14,7 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Star, LogOut, Trophy, CheckCircle2, Clock, Filter, Search,
-  ChevronDown, ChevronUp, Cpu, X,
+  ChevronDown, ChevronUp, Cpu, X, Github, Download, Users, Mail,
+  Building2, Award,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ interface Submission {
   file_url: string | null;
   status: string;
   created_at: string;
+  email: string;
 }
 
 interface JudgeScore {
@@ -50,6 +52,59 @@ const CRITERIA: { key: keyof Omit<JudgeScore, "id" | "submission_id" | "notes">;
 ];
 
 const CATEGORIES = ["All", "AI & Machine Learning", "Web & Mobile Development", "Cybersecurity"];
+
+// ── Description Parser ────────────────────────────────────────────────────────
+
+interface ParsedDescription {
+  sector: string | null;
+  teamMembers: Array<{ name: string; email: string; isLeader: boolean }>;
+  projectDescription: string;
+}
+
+const parseDescription = (raw: string): ParsedDescription => {
+  const result: ParsedDescription = {
+    sector: null,
+    teamMembers: [],
+    projectDescription: raw,
+  };
+
+  // Check if this is the new packed format
+  if (!raw.includes("TEAM MEMBERS:") || !raw.includes("PROJECT DESCRIPTION:")) {
+    return result; // Old format - return as-is
+  }
+
+  // Extract SECTOR
+  const sectorMatch = raw.match(/SECTOR:\s*(.+?)\n/);
+  if (sectorMatch) {
+    result.sector = sectorMatch[1].trim();
+  }
+
+  // Extract TEAM MEMBERS
+  const teamMatch = raw.match(/TEAM MEMBERS:\n([\s\S]+?)\n\nPROJECT DESCRIPTION:/);
+  if (teamMatch) {
+    const teamSection = teamMatch[1];
+    const memberLines = teamSection.split('\n').filter(line => line.trim());
+
+    memberLines.forEach(line => {
+      // Format: "1. Name — email (Team Leader)" or "2. Name — email"
+      const match = line.match(/^\d+\.\s+(.+?)\s+—\s+(.+?)(?:\s+\(Team Leader\))?$/);
+      if (match) {
+        const name = match[1].trim();
+        const email = match[2].trim();
+        const isLeader = line.includes("(Team Leader)");
+        result.teamMembers.push({ name, email, isLeader });
+      }
+    });
+  }
+
+  // Extract PROJECT DESCRIPTION
+  const descMatch = raw.match(/PROJECT DESCRIPTION:\n([\s\S]+)$/);
+  if (descMatch) {
+    result.projectDescription = descMatch[1].trim();
+  }
+
+  return result;
+};
 
 // ── Score Slider ──────────────────────────────────────────────────────────────
 
@@ -239,7 +294,7 @@ const JudgeDashboard = () => {
     setDataLoading(true);
     try {
       const [subRes, scoreRes] = await Promise.all([
-        supabase.from("submissions").select("id,project_title,full_name,school,category,description,github_link,file_url,status,created_at").order("created_at", { ascending: false }),
+        supabase.from("submissions").select("id,project_title,full_name,school,category,description,github_link,file_url,status,created_at,email").order("created_at", { ascending: false }),
         supabase.from("project_scores").select("*").eq("judge_id", user.id),
       ]);
       
@@ -480,20 +535,133 @@ const JudgeDashboard = () => {
                   </div>
 
                   {isExpanded && (
-                    <div className="px-4 pb-4 border-t border-slate-50 dark:border-slate-800 pt-3 space-y-3">
-                      <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{sub.description}</p>
-                      {score && (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
-                          {CRITERIA.map(({ key, label }) => (
-                            <div key={key} className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2.5 text-center">
-                              <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
-                              <p className="text-xl font-black text-purple-600 dark:text-purple-400 mt-0.5">{score[key]}</p>
-                            </div>
-                          ))}
+                    <div className="px-4 pb-4 border-t border-slate-50 dark:border-slate-800 pt-4 space-y-4">
+                      {/* Team Members Section */}
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
+                          <Users className="inline h-3.5 w-3.5 mr-1" />
+                          Team Members
+                        </p>
+                        <div className="space-y-2">
+                          {(() => {
+                            const parsed = parseDescription(sub.description);
+                            if (parsed.teamMembers.length > 0) {
+                              return parsed.teamMembers.map((member, idx) => (
+                                <div key={idx} className="flex items-start gap-2 text-sm">
+                                  <div className={`mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0 ${member.isLeader ? "bg-amber-500" : "bg-slate-300 dark:bg-slate-600"}`} />
+                                  <div className="flex-1">
+                                    <p className="text-slate-700 dark:text-slate-300">
+                                      {member.name}
+                                      {member.isLeader && <Award className="inline h-3.5 w-3.5 ml-1 text-amber-500" />}
+                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                      <Mail className="h-3 w-3" />
+                                      {member.email}
+                                    </p>
+                                  </div>
+                                </div>
+                              ));
+                            } else {
+                              // Fallback: split full_name by " | "
+                              const names = sub.full_name.split(" | ");
+                              return (
+                                <>
+                                  {names.map((name, idx) => (
+                                    <div key={idx} className="flex items-start gap-2 text-sm">
+                                      <div className={`mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0 ${idx === 0 ? "bg-amber-500" : "bg-slate-300 dark:bg-slate-600"}`} />
+                                      <p className="text-slate-700 dark:text-slate-300">
+                                        {name}
+                                        {idx === 0 && <Award className="inline h-3.5 w-3.5 ml-1 text-amber-500" />}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </>
+                              );
+                            }
+                          })()}
+                        </div>
+                        <div className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                          <p className="flex items-center gap-1">
+                            <Building2 className="h-3.5 w-3.5" />
+                            {sub.school}
+                          </p>
+                          {(() => {
+                            const parsed = parseDescription(sub.description);
+                            return parsed.sector && (
+                              <p className="mt-1">Sector: {parsed.sector}</p>
+                            );
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* Project Description Section */}
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                          Project Description
+                        </p>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                          {parseDescription(sub.description).projectDescription}
+                        </p>
+                      </div>
+
+                      {/* Links & Files Section */}
+                      {(sub.github_link || sub.file_url) && (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                            Links & Files
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {sub.github_link && (
+                              <a
+                                href={sub.github_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-600 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 text-xs font-medium transition-colors"
+                              >
+                                <Github className="h-3.5 w-3.5" />
+                                GitHub
+                              </a>
+                            )}
+                            {sub.file_url && (
+                              <a
+                                href={sub.file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600 text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 text-xs font-medium transition-colors"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                Download File
+                              </a>
+                            )}
+                          </div>
                         </div>
                       )}
+
+                      {/* Scores Breakdown */}
+                      {score && (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                            Scores
+                          </p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {CRITERIA.map(({ key, label }) => (
+                              <div key={key} className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2.5 text-center">
+                                <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
+                                <p className="text-xl font-black text-purple-600 dark:text-purple-400 mt-0.5">{score[key]}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Judge Notes */}
                       {score?.notes && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 italic">Notes: {score.notes}</p>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                            Your Notes
+                          </p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 italic">{score.notes}</p>
+                        </div>
                       )}
                     </div>
                   )}
