@@ -23,10 +23,9 @@ const tracks = [
     desc: "Develop innovative web and mobile applications that promote awareness and education about the Genocide against the Tutsi while encouraging unity among youth.",
     instructions: [
       "Solutions must provide accurate, respectful, and educational content aligned with genocide against the Tutsi.",
-      "Design intuitive user interfaces and experiences",
-      "Choose appropriate technology stack (React, Flutter, etc.)",
-      "Develop and implement core features",
-      "Test thoroughly and deploy your application",
+      "Emphasis on creativity and usability in promoting awareness.",
+      "Build a simple but functional prototype (website or mobile app).",
+      "Systems must ensure privacy and data protection, avoiding the use of sensitive personal data without consent.",
     ],
   },
   {
@@ -35,11 +34,10 @@ const tracks = [
     color: "bg-red-500/10 text-red-600",
     desc: "Develop cybersecurity solutions that detect, prevent, and respond to the spread of genocide ideology, misinformation, and harmful content across digital platforms while ensuring safe and secure online environments.",
     instructions: [
-      "Understand cybersecurity principles and threat models",
-      "Identify specific threats related to hate speech and misinformation",
-      "Design security measures and detection algorithms",
-      "Implement secure platforms and tools",
-      "Test security solutions and validate effectiveness",
+      "Application must include a functional security prototype.",
+      "Solutions must demonstrate basic threat detection, such as identifying suspicious content, fake news, or malicious activity about genocide ideology.",
+      "Strong focus on practical impact, usability, and relevance to preventing digital threats related to division and misinformation about Genocide Against The Tutsi.",
+      "Projects must follow ethical cybersecurity practices, avoiding harmful testing on real systems without permission.",
     ],
   },
 ];
