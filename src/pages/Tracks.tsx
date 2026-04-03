@@ -4,7 +4,7 @@ import { Brain, Globe, Shield } from "lucide-react";
 const tracks = [
   {
     icon: Brain,
-    title: "AI & Machine Learning<br />Challenge",
+    title: "AI & Machine Learning",
     color: "bg-blue-500/10 text-blue-600",
     desc: "Develop an AI-powered solution to detect, analyze, or prevent the spread of genocide ideology, hate speech, and misinformation on digital platforms while promoting awareness and unity.",
     instructions: [
