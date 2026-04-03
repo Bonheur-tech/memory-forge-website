@@ -8,9 +8,9 @@ const tracks = [
     color: "bg-blue-500/10 text-blue-600",
     desc: "Develop an AI-powered solution to detect, analyze, or prevent the spread of genocide ideology, hate speech, and misinformation on digital platforms while promoting awareness and unity.",
     instructions: [
-      "Research and understand the problem of hate speech detection and genocide ideology",
-      "Collect and prepare relevant datasets for training AI models",
-      "Choose appropriate AI/ML algorithms (NLP, computer vision, etc.)",
+      "Solutions must use safe, ethical, and preferably public datasets.",
+      "Application must include a functional AI prototype demonstrating the core concept.",
+      "AI models should be designed to detect harmful content and promote positive, educational responses.",
       "Train and validate your models for accuracy and bias mitigation",
       "Implement the solution with user-friendly interfaces",
     ],
