@@ -54,14 +54,14 @@ const TRACKS = [
 const FEATURES = [
   {
     icon: Trophy,
-    title: "2M RWF in Prizes",
+    title: "Prizes in RWF",
     desc: "Compete for significant cash prizes, mentorship opportunities, and recognition across Rwanda's tech ecosystem.",
     color: "text-amber-400",
   },
   {
     icon: Users,
     title: "Expert Mentors",
-    desc: "Work alongside industry professionals, AI researchers, and scholars in genocide remembrance and memory preservation.",
+    desc: "Work alongside industry professionals, AI researchers, and scholars in genocide Against the Tutsi remembrance and memory preservation.",
     color: "text-blue-400",
   },
   {
@@ -83,7 +83,7 @@ const STEPS = [
     icon: CheckCircle,
     title: "Register",
     date: "By April 5",
-    desc: "Sign up individually or assemble your team of up to 5 students.",
+    desc: "Sign up individually or assemble your team of up to 3 students.",
   },
   {
     icon: Users,
@@ -113,16 +113,16 @@ const STEPS = [
 
 const PARTNERS = [
   "MINUBUMWE",
-  "Aegis Trust",
-  "Rwanda ICT Chamber",
-  "University of Rwanda",
-  "Rwanda Coding Academy",
-  "AEGIS Trust",
+  "MINICT",
+  "1MILLION CODERS",
+  "BK-INSURANCE",
+  "REB",
+  "IBUKA",
 ];
 
 const STATS = [
   { value: "500+", label: "Students Expected" },
-  { value: "4", label: "Competition Tracks" },
+  { value: "3", label: "Competition Tracks" },
   { value: "2M+", label: "RWF in Prizes" },
   { value: "48h", label: "Of Innovation" },
 ];
@@ -293,7 +293,7 @@ const Index = () => {
               <p className="text-white/60 leading-relaxed mb-5 font-body">
                 The 1994 Genocide against the Tutsi claimed over 1,000,000 lives
                 in 100 days. Thirty two years later, the obligation to remember
-                — <em>kwibuka</em> — remains urgent. As revisionism grows,
+                — <em>kwibuka</em> — remains urgent. As
                 genocide ideology and hate speech spreads online, technology
                 becomes our most powerful tool for truth and prevention.
               </p>
