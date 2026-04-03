@@ -4,14 +4,15 @@ import { Brain, Globe, Shield } from "lucide-react";
 const tracks = [
   {
     icon: Brain,
-    title: "AI & Machine Learning",
+    title: "AI & Machine Learning\nChallenge",
     color: "bg-blue-500/10 text-blue-600",
     desc: "Develop an AI-powered solution to detect, analyze, or prevent the spread of genocide ideology, hate speech, and misinformation on digital platforms while promoting awareness and unity.",
-    examples: [
-      "AI-powered transcription and translation of survivor testimonies",
-      "Natural language processing to detect and flag hate speech online",
-      "Machine learning models to identify patterns of radicalization",
-      "Chatbots that educate users about the history of the genocide",
+    instructions: [
+      "Research and understand the problem of hate speech detection and genocide ideology",
+      "Collect and prepare relevant datasets for training AI models",
+      "Choose appropriate AI/ML algorithms (NLP, computer vision, etc.)",
+      "Train and validate your models for accuracy and bias mitigation",
+      "Implement the solution with user-friendly interfaces",
     ],
   },
   {
@@ -19,23 +20,25 @@ const tracks = [
     title: "Web & Mobile Development",
     color: "bg-green-500/10 text-green-600",
     desc: "Develop innovative web and mobile applications that promote awareness and education about the Genocide against the Tutsi while encouraging unity among youth.",
-    examples: [
-      "Interactive digital memorial platforms",
-      "Mobile apps for genocide education in schools",
-      "Community storytelling and testimony sharing platforms",
-      "Virtual tours of memorial sites across Rwanda",
+    instructions: [
+      "Identify user needs and define clear project requirements",
+      "Design intuitive user interfaces and experiences",
+      "Choose appropriate technology stack (React, Flutter, etc.)",
+      "Develop and implement core features",
+      "Test thoroughly and deploy your application",
     ],
   },
   {
     icon: Shield,
     title: "Cybersecurity & Anti-Hate Tech",
     color: "bg-red-500/10 text-red-600",
-    desc: "Develop tools to combat online hate, misinformation, and genocide denial.",
-    examples: [
-      "Browser extensions that flag genocide denial content",
-      "Misinformation detection and fact-checking tools",
-      "Secure platforms for documenting and reporting hate speech",
-      "Digital forensics tools for analyzing online radicalization",
+    desc: "Develop cybersecurity solutions that detect, prevent, and respond to the spread of genocide ideology, misinformation, and harmful content across digital platforms while ensuring safe and secure online environments.",
+    instructions: [
+      "Understand cybersecurity principles and threat models",
+      "Identify specific threats related to hate speech and misinformation",
+      "Design security measures and detection algorithms",
+      "Implement secure platforms and tools",
+      "Test security solutions and validate effectiveness",
     ],
   },
 ];
@@ -61,12 +64,12 @@ const Tracks = () => {
                 <h3 className="text-xl font-display font-bold text-foreground mb-3">{track.title}</h3>
                 <p className="text-muted-foreground leading-relaxed mb-5">{track.desc}</p>
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground mb-3">Example Projects:</h4>
+                  <h4 className="text-sm font-semibold text-foreground mb-3">Instructions:</h4>
                   <ul className="space-y-2">
-                    {track.examples.map((ex) => (
-                      <li key={ex} className="flex items-start gap-2 text-sm text-muted-foreground">
+                    {track.instructions.map((inst) => (
+                      <li key={inst} className="flex items-start gap-2 text-sm text-muted-foreground">
                         <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-memorial shrink-0" />
-                        {ex}
+                        {inst}
                       </li>
                     ))}
                   </ul>

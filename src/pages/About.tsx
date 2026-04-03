@@ -32,7 +32,7 @@ const About = () => {
                 The <strong className="text-foreground">Never Again AI Hackathon 2026</strong> is a national-level student hackathon held in Kigali, Rwanda. It is organized in the spirit of <em>Kwibuka</em> — the annual commemoration of the 1994 Genocide against the Tutsi — and is dedicated to harnessing technology as a force for memory, education, and the prevention of hate.
               </p>
               <p>
-                This hackathon invites students from secondary schools across Rwanda to come together and build innovative solutions that address real challenges: preserving survivor testimonies through AI, combating online hate speech, visualizing historical data, and creating platforms that educate and inform.
+                This hackathon invites students from secondary schools across Rwanda to come together and build innovative solutions that address real challenges: preserving survivor testimonies through AI, combating online hate speech, and creating platforms that educate and inform.
               </p>
               <p>
                 Our goal is not just to build technology — it is to build technology with <strong className="text-foreground">purpose</strong>. Every line of code written during this event carries the weight of remembrance and the promise of a better tomorrow.
