@@ -122,6 +122,57 @@ export type Database = {
         }
         Relationships: []
       }
+      project_scores: {
+        Row: {
+          id: string
+          submission_id: string
+          judge_id: string
+          innovation: number
+          impact: number
+          technical_quality: number
+          relevance: number
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          submission_id: string
+          judge_id: string
+          innovation: number
+          impact: number
+          technical_quality: number
+          relevance: number
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          submission_id?: string
+          judge_id?: string
+          innovation?: number
+          impact?: number
+          technical_quality?: number
+          relevance?: number
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_scores_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "submissions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_scores_judge_id_fkey"
+            columns: ["judge_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -154,6 +205,12 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      get_user_role: {
+        Args: {
+          _user_id: string
+        }
+        Returns: Database["public"]["Enums"]["app_role"]
       }
     }
     Enums: {

@@ -118,8 +118,7 @@ const ScoringModal = ({
     try {
       if (existing) {
         // Update existing score
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data, error } = await (supabase.from("project_scores") as any)
+        const { data, error } = await supabase.from("project_scores")
           .update({ ...scores, notes: notes || null })
           .eq("id", existing.id)
           .select()
@@ -129,8 +128,7 @@ const ScoringModal = ({
         onSaved(data as JudgeScore);
       } else {
         // Insert new score
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data, error } = await (supabase.from("project_scores") as any)
+        const { data, error } = await supabase.from("project_scores")
           .insert({ submission_id: submission.id, judge_id: judgeId, ...scores, notes: notes || null })
           .select()
           .single();
@@ -242,13 +240,35 @@ const JudgeDashboard = () => {
     try {
       const [subRes, scoreRes] = await Promise.all([
         supabase.from("submissions").select("id,project_title,full_name,school,category,description,github_link,file_url,status,created_at").order("created_at", { ascending: false }),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase.from("project_scores") as any).select("*").eq("judge_id", user.id),
+        supabase.from("project_scores").select("*").eq("judge_id", user.id),
       ]);
-      if (subRes.data) setSubmissions(subRes.data as Submission[]);
-      if (scoreRes.data) setMyScores(scoreRes.data as JudgeScore[]);
-    } catch {
-      toast({ title: "Failed to load data.", variant: "destructive" });
+      
+      if (subRes.error) {
+        toast({ 
+          title: "Failed to load submissions.", 
+          description: subRes.error.message,
+          variant: "destructive" 
+        });
+      } else if (subRes.data) {
+        setSubmissions(subRes.data as Submission[]);
+      }
+      
+      if (scoreRes.error) {
+        toast({ 
+          title: "Failed to load your scores.", 
+          description: scoreRes.error.message,
+          variant: "destructive" 
+        });
+      } else if (scoreRes.data) {
+        setMyScores(scoreRes.data as JudgeScore[]);
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      toast({ 
+        title: "Failed to load data.", 
+        description: errorMsg,
+        variant: "destructive" 
+      });
     } finally {
       setDataLoading(false);
     }
