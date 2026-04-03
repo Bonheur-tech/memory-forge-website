@@ -54,8 +54,8 @@ const TRACKS = [
 const FEATURES = [
   {
     icon: Trophy,
-    title: "Prizes in RWF",
-    desc: "Compete for significant cash prizes, mentorship opportunities, and recognition across Rwanda's tech ecosystem.",
+    title: "Prizes",
+    desc: "Compete for significant  prizes, mentorship opportunities, and recognition across Rwanda's tech ecosystem.",
     color: "text-amber-400",
   },
   {
@@ -82,31 +82,31 @@ const STEPS = [
   {
     icon: CheckCircle,
     title: "Register",
-    date: "By April 5",
+    date: "By April 10",
     desc: "Sign up individually or assemble your team of up to 3 students.",
   },
   {
     icon: Users,
     title: "Form & Ideate",
-    date: "April 5–6",
+    date: "April 10–11",
     desc: "Gather your team, research the tracks, and brainstorm your solution.",
   },
   {
     icon: Code2,
-    title: "Hack (48h)",
-    date: "April 7–9",
+    title: "Hack (10D)",
+    date: "April 12–19",
     desc: "Build, iterate, and refine your project during the hackathon weekend.",
   },
   {
     icon: Presentation,
-    title: "Submit & Present",
-    date: "April 9",
-    desc: "Submit your project and present it to our panel of expert judges.",
+    title: "Submit",
+    date: "April 20",
+    desc: "Submit your project and wait for response on your email from judges.",
   },
   {
     icon: Award,
     title: "Winners Announced",
-    date: "April 10",
+    date: "April 25",
     desc: "Celebrate the teams making the greatest impact through technology.",
   },
 ];
@@ -123,8 +123,8 @@ const PARTNERS = [
 const STATS = [
   { value: "500+", label: "Students Expected" },
   { value: "3", label: "Competition Tracks" },
-  { value: "2M+", label: "RWF in Prizes" },
-  { value: "48h", label: "Of Innovation" },
+  { value: "Pending", label: "RWF in Prizes" },
+  { value: "10D", label: "Of Innovation" },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
