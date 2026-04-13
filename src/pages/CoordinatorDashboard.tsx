@@ -1,7 +1,6 @@
 /**
  * Coordinator Dashboard — Never Again AI Hackathon
- * Coordinators can monitor submissions, view scoring progress, and see rankings.
- * Read-only — cannot score or edit.
+ * Coordinators can monitor submissions, update statuses, assign tasks, and generate reports.
  */
 
 import { useEffect, useState, useCallback } from "react";
@@ -11,7 +10,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LogOut, Cpu, Search, Filter, FileText, CheckCircle2, Clock, BarChart3, Trophy } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { LogOut, Cpu, Search, Filter, FileText, CheckCircle2, Clock, BarChart3, Trophy, UserPlus, Edit, FileBarChart, Plus } from "lucide-react";
 import StaffInbox from "@/components/StaffInbox";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -24,8 +26,27 @@ interface Submission {
   category: string;
   description: string;
   status: string;
+  admin_feedback?: string;
   score_count?: number;
   created_at: string;
+}
+
+interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  assigned_to: string;
+  assigned_by?: string;
+  submission_id?: string;
+  status: string;
+  priority: string;
+  due_date?: string;
+  created_at: string;
+}
+
+interface User {
+  user_id: string;
+  role: string;
 }
 
 interface RankingRow {
@@ -38,7 +59,25 @@ interface RankingRow {
   overall_rank: number;
 }
 
+interface Report {
+  total_submissions: number;
+  submissions_by_status: Record<string, number>;
+  submissions_by_category: Record<string, number>;
+  total_tasks: number;
+  tasks_by_status: Record<string, number>;
+  tasks_by_priority: Record<string, number>;
+  total_scores: number;
+  recent_activity: {
+    submissions_last_7_days: number;
+    tasks_last_7_days: number;
+    scores_last_7_days: number;
+  };
+}
+
 const CATEGORIES = ["All", "AI & Machine Learning", "Web & Mobile Development", "Cybersecurity"];
+const STATUSES = ["pending", "approved", "rejected", "winner"];
+const PRIORITIES = ["low", "medium", "high"];
+const TASK_STATUSES = ["pending", "in_progress", "completed"];
 
 // ── Category stats card ───────────────────────────────────────────────────────
 
@@ -68,12 +107,28 @@ const CoordinatorDashboard = () => {
 
   const [access, setAccess]           = useState<"checking" | "granted" | "denied">("checking");
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [tasks, setTasks]             = useState<Task[]>([]);
+  const [users, setUsers]             = useState<User[]>([]);
   const [rankings, setRankings]       = useState<RankingRow[]>([]);
+  const [report, setReport]           = useState<Report | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
-  const [activeTab, setActiveTab]     = useState<"submissions" | "rankings">("submissions");
+  const [activeTab, setActiveTab]     = useState<"overview" | "submissions" | "tasks" | "assign" | "report">("overview");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [search, setSearch]           = useState("");
   const [darkMode, setDarkMode]       = useState(() => localStorage.getItem("adminDarkMode") === "true");
+
+  // Dialog states
+  const [editSubmission, setEditSubmission] = useState<Submission | null>(null);
+  const [editTask, setEditTask] = useState<Task | null>(null);
+  const [assignDialog, setAssignDialog] = useState(false);
+  const [newTask, setNewTask] = useState({
+    title: "",
+    description: "",
+    assigned_to: "",
+    submission_id: "",
+    priority: "medium",
+    due_date: ""
+  });
 
   useEffect(() => {
     const el = document.documentElement;
@@ -85,11 +140,10 @@ const CoordinatorDashboard = () => {
   useEffect(() => {
     if (authLoading) return;
     if (!user) { setAccess("denied"); return; }
-    if (role === null) return; // user authenticated but role still resolving — stay "checking"
+    if (role === null) return;
     if (role === "coordinator") { if (access !== "granted") { setAccess("granted"); fetchData(); } }
     else { setAccess("denied"); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user, role]);
+  }, [authLoading, user, role, access]);
 
   useEffect(() => {
     if (access === "denied") navigate("/login", { replace: true });
@@ -98,26 +152,115 @@ const CoordinatorDashboard = () => {
   const fetchData = useCallback(async () => {
     setDataLoading(true);
     try {
-      const [subRes, rankRes] = await Promise.all([
-        supabase.from("submissions")
-          .select("id,project_title,full_name,school,category,description,status,created_at")
-          .order("created_at", { ascending: false }),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [subRes, taskRes, userRes, rankRes] = await Promise.all([
+        supabase.from("submissions").select("*").order("created_at", { ascending: false }),
+        supabase.from("tasks").select("*").order("created_at", { ascending: false }),
+        supabase.from("user_roles").select("user_id, role"),
         (supabase as any).rpc("get_rankings", { p_category: null }),
       ]);
       if (subRes.data) setSubmissions(subRes.data as Submission[]);
+      if (taskRes.data) setTasks(taskRes.data as Task[]);
+      if (userRes.data) setUsers(userRes.data as User[]);
       if (rankRes.data) setRankings(rankRes.data as RankingRow[]);
-    } catch {
+    } catch (err) {
+      console.error("Dashboard fetch failed:", err);
       toast({ title: "Failed to load data.", variant: "destructive" });
     } finally {
       setDataLoading(false);
     }
   }, [toast]);
 
+  const fetchReport = useCallback(async () => {
+    try {
+      const response = await fetch('/functions/v1/coordinator-report', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setReport(data);
+      } else {
+        toast({ title: "Failed to generate report.", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Failed to generate report.", variant: "destructive" });
+    }
+  }, [toast]);
+
+  const updateSubmission = async (id: string, updates: Partial<Submission>) => {
+    try {
+      const response = await fetch('/functions/v1/coordinator-update', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ type: 'submission', id, updates })
+      });
+      if (response.ok) {
+        toast({ title: "Submission updated successfully." });
+        fetchData();
+        setEditSubmission(null);
+      } else {
+        toast({ title: "Failed to update submission.", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Failed to update submission.", variant: "destructive" });
+    }
+  };
+
+  const updateTask = async (id: string, updates: Partial<Task>) => {
+    try {
+      const response = await fetch('/functions/v1/coordinator-update', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ type: 'task', id, updates })
+      });
+      if (response.ok) {
+        toast({ title: "Task updated successfully." });
+        fetchData();
+        setEditTask(null);
+      } else {
+        toast({ title: "Failed to update task.", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Failed to update task.", variant: "destructive" });
+    }
+  };
+
+  const assignTask = async () => {
+    try {
+      const response = await fetch('/functions/v1/coordinator-assign', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(newTask)
+      });
+      if (response.ok) {
+        toast({ title: "Task assigned successfully." });
+        fetchData();
+        setAssignDialog(false);
+        setNewTask({ title: "", description: "", assigned_to: "", submission_id: "", priority: "medium", due_date: "" });
+      } else {
+        toast({ title: "Failed to assign task.", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Failed to assign task.", variant: "destructive" });
+    }
+  };
+
   const scoredByCategory = (cat: string) =>
     rankings.filter((r) => r.category === cat && r.score_count > 0).length;
 
-  const filtered = submissions.filter((s) => {
+  const filteredSubmissions = submissions.filter((s) => {
     const matchCat = categoryFilter === "All" || s.category === categoryFilter;
     const matchSearch = !search.trim() ||
       s.project_title.toLowerCase().includes(search.toLowerCase()) ||
@@ -162,55 +305,65 @@ const CoordinatorDashboard = () => {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { label: "Total Submissions", value: submissions.length, icon: FileText,    color: "bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400" },
-            { label: "Scored",            value: rankings.filter((r) => r.score_count > 0).length, icon: CheckCircle2, color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" },
-            { label: "Not Yet Scored",    value: rankings.filter((r) => r.score_count === 0).length, icon: Clock, color: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" },
-            { label: "Categories",        value: CATEGORIES.length - 1, icon: BarChart3, color: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
-          ].map(({ label, value, icon: Icon, color }) => (
-            <div key={label} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-4 flex items-center gap-3">
-              <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
-                <Icon className="h-4.5 w-4.5" style={{ height: "1.125rem", width: "1.125rem" }} />
-              </div>
-              <div>
-                <p className="text-xl font-bold text-slate-900 dark:text-white">{value}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Category breakdown */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {CATEGORIES.slice(1).map((cat) => (
-            <CategoryCard
-              key={cat}
-              category={cat}
-              submissions={submissions.filter((s) => s.category === cat)}
-              scoredCount={scoredByCategory(cat)}
-            />
-          ))}
-        </div>
-
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         {/* Tabs */}
-        <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-1 w-fit">
-          {(["submissions", "rankings"] as const).map((tab) => (
+        <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-1 w-fit overflow-x-auto">
+          {[
+            { key: "overview", label: "Overview", icon: BarChart3 },
+            { key: "submissions", label: "Submissions", icon: FileText },
+            { key: "tasks", label: "Tasks", icon: CheckCircle2 },
+            { key: "assign", label: "Assign Task", icon: UserPlus },
+            { key: "report", label: "Report", icon: FileBarChart }
+          ].map(({ key, label, icon: Icon }) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${
-                activeTab === tab
+              key={key}
+              onClick={() => { setActiveTab(key as any); if (key === "report") fetchReport(); }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all flex items-center gap-2 whitespace-nowrap ${
+                activeTab === key
                   ? "bg-purple-600 text-white"
                   : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
               }`}
             >
-              {tab === "submissions" ? <><FileText className="h-3.5 w-3.5 inline mr-1.5" />Submissions</> : <><Trophy className="h-3.5 w-3.5 inline mr-1.5" />Rankings</>}
+              <Icon className="h-3.5 w-3.5" /> {label}
             </button>
           ))}
         </div>
+
+        {activeTab === "overview" && (
+          <>
+            {/* Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                { label: "Total Submissions", value: submissions.length, icon: FileText, color: "bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400" },
+                { label: "Active Tasks", value: tasks.filter(t => t.status !== 'completed').length, icon: CheckCircle2, color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" },
+                { label: "Pending Tasks", value: tasks.filter(t => t.status === 'pending').length, icon: Clock, color: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" },
+                { label: "Users", value: users.length, icon: Trophy, color: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
+              ].map(({ label, value, icon: Icon, color }) => (
+                <div key={label} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-4 flex items-center gap-3">
+                  <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
+                    <Icon className="h-4.5 w-4.5" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-slate-900 dark:text-white">{value}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Category breakdown */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {CATEGORIES.slice(1).map((cat) => (
+                <CategoryCard
+                  key={cat}
+                  category={cat}
+                  submissions={submissions.filter((s) => s.category === cat)}
+                  scoredCount={scoredByCategory(cat)}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         {activeTab === "submissions" && (
           <>
@@ -242,48 +395,49 @@ const CoordinatorDashboard = () => {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 dark:border-slate-700/50">
-                        {["Project", "Team / School", "Category", "Status", "Submitted"].map((h) => (
+                        {["Project", "Team / School", "Category", "Status", "Feedback", "Actions"].map((h) => (
                           <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((sub, i) => {
-                        const ranked = rankings.find((r) => r.submission_id === sub.id);
-                        return (
-                          <tr key={sub.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${i < filtered.length - 1 ? "border-b border-slate-50 dark:border-slate-800" : ""}`}>
-                            <td className="px-5 py-3.5">
-                              <p className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[180px]">{sub.project_title}</p>
-                            </td>
-                            <td className="px-5 py-3.5">
-                              <p className="text-xs text-slate-600 dark:text-slate-400 truncate max-w-[160px]">{sub.full_name}</p>
-                              <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate max-w-[160px]">{sub.school}</p>
-                            </td>
-                            <td className="px-5 py-3.5">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] border border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300">
-                                {sub.category}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5">
-                              {ranked && ranked.score_count > 0 ? (
-                                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                                  ✓ Scored ({ranked.score_count})
-                                </span>
-                              ) : (
-                                <span className="text-xs text-amber-600 dark:text-amber-400">Pending</span>
-                              )}
-                            </td>
-                            <td className="px-5 py-3.5">
-                              <span className="text-xs text-slate-400 dark:text-slate-500">
-                                {new Date(sub.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {filteredSubmissions.map((sub, i) => (
+                        <tr key={sub.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${i < filteredSubmissions.length - 1 ? "border-b border-slate-50 dark:border-slate-800" : ""}`}>
+                          <td className="px-5 py-3.5">
+                            <p className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[180px]">{sub.project_title}</p>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <p className="text-xs text-slate-600 dark:text-slate-400 truncate max-w-[160px]">{sub.full_name}</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate max-w-[160px]">{sub.school}</p>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] border border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300">
+                              {sub.category}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                              sub.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              sub.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-200' :
+                              sub.status === 'winner' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              'bg-slate-50 text-slate-700 border-slate-200'
+                            }`}>
+                              {sub.status}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <p className="text-xs text-slate-600 dark:text-slate-400 truncate max-w-[200px]">{sub.admin_feedback || "—"}</p>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <Button variant="outline" size="sm" onClick={() => setEditSubmission(sub)}>
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
-                  {filtered.length === 0 && (
+                  {filteredSubmissions.length === 0 && (
                     <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">No projects found.</div>
                   )}
                 </div>
@@ -292,53 +446,190 @@ const CoordinatorDashboard = () => {
           </>
         )}
 
-        {activeTab === "rankings" && (
+        {activeTab === "tasks" && (
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700/50">
-              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest">Live Leaderboard</h3>
-            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-slate-700/50">
-                    {["Rank", "Project", "Team", "Category", "Avg Score", "Judges"].map((h) => (
+                    {["Title", "Assigned To", "Status", "Priority", "Due Date", "Actions"].map((h) => (
                       <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {rankings.map((row, i) => (
-                    <tr key={row.submission_id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${i < rankings.length - 1 ? "border-b border-slate-50 dark:border-slate-800" : ""}`}>
+                  {tasks.map((task, i) => (
+                    <tr key={task.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${i < tasks.length - 1 ? "border-b border-slate-50 dark:border-slate-800" : ""}`}>
                       <td className="px-5 py-3.5">
-                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border ${
-                          row.overall_rank === 1 ? "text-amber-600 bg-amber-50 dark:bg-amber-900/20 border-amber-200" :
-                          row.overall_rank === 2 ? "text-slate-500 bg-slate-50 dark:bg-slate-700 border-slate-200" :
-                          row.overall_rank === 3 ? "text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-orange-200" :
-                          "text-slate-500 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700"
-                        }`}>{row.overall_rank}</span>
+                        <p className="font-medium text-slate-800 dark:text-slate-200">{task.title}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{task.description}</p>
                       </td>
-                      <td className="px-5 py-3.5"><p className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[160px]">{row.project_title}</p></td>
-                      <td className="px-5 py-3.5"><p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[120px]">{row.team_name}</p></td>
+                      <td className="px-5 py-3.5 text-xs text-slate-600 dark:text-slate-400">{task.assigned_to}</td>
                       <td className="px-5 py-3.5">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] border border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300">{row.category}</span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className={`text-sm font-bold ${Number(row.avg_score) >= 8 ? "text-emerald-600" : Number(row.avg_score) >= 5 ? "text-amber-600" : "text-slate-400"}`}>
-                          {row.score_count > 0 ? Number(row.avg_score).toFixed(2) : "—"}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                          task.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          task.status === 'in_progress' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                          'bg-slate-50 text-slate-700 border-slate-200'
+                        }`}>
+                          {task.status}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 text-xs text-slate-500 dark:text-slate-400">{row.score_count}</td>
+                      <td className="px-5 py-3.5">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                          task.priority === 'high' ? 'bg-red-50 text-red-700 border-red-200' :
+                          task.priority === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                          'bg-slate-50 text-slate-700 border-slate-200'
+                        }`}>
+                          {task.priority}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-xs text-slate-500 dark:text-slate-400">
+                        {task.due_date ? new Date(task.due_date).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <Button variant="outline" size="sm" onClick={() => setEditTask(task)}>
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {rankings.length === 0 && (
-                <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">No rankings yet.</div>
+              {tasks.length === 0 && (
+                <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">No tasks found.</div>
               )}
             </div>
           </div>
         )}
+
+        {activeTab === "assign" && (
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Assign New Task</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input placeholder="Task Title" value={newTask.title} onChange={(e) => setNewTask({...newTask, title: e.target.value})} />
+              <Select value={newTask.assigned_to} onValueChange={(value) => setNewTask({...newTask, assigned_to: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Assign to User" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.filter(u => u.role === 'user').map(u => (
+                    <SelectItem key={u.user_id} value={u.user_id}>{u.user_id}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={newTask.submission_id} onValueChange={(value) => setNewTask({...newTask, submission_id: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Related Submission (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {submissions.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.project_title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={newTask.priority} onValueChange={(value) => setNewTask({...newTask, priority: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Textarea placeholder="Description" value={newTask.description} onChange={(e) => setNewTask({...newTask, description: e.target.value})} className="md:col-span-2" />
+              <Input type="date" placeholder="Due Date" value={newTask.due_date} onChange={(e) => setNewTask({...newTask, due_date: e.target.value})} />
+            </div>
+            <Button onClick={assignTask} className="mt-4" disabled={!newTask.title || !newTask.assigned_to}>
+              <Plus className="h-4 w-4 mr-2" /> Assign Task
+            </Button>
+          </div>
+        )}
+
+        {activeTab === "report" && report && (
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Activity Summary Report</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <h4 className="font-semibold text-slate-700 dark:text-slate-300">Submissions</h4>
+                  <p>Total: {report.total_submissions}</p>
+                  <p>By Status: {JSON.stringify(report.submissions_by_status)}</p>
+                  <p>By Category: {JSON.stringify(report.submissions_by_category)}</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-slate-700 dark:text-slate-300">Tasks</h4>
+                  <p>Total: {report.total_tasks}</p>
+                  <p>By Status: {JSON.stringify(report.tasks_by_status)}</p>
+                  <p>By Priority: {JSON.stringify(report.tasks_by_priority)}</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-slate-700 dark:text-slate-300">Recent Activity (7 days)</h4>
+                  <p>Submissions: {report.recent_activity.submissions_last_7_days}</p>
+                  <p>Tasks: {report.recent_activity.tasks_last_7_days}</p>
+                  <p>Scores: {report.recent_activity.scores_last_7_days}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* Edit Submission Dialog */}
+      <Dialog open={!!editSubmission} onOpenChange={() => setEditSubmission(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Submission</DialogTitle>
+          </DialogHeader>
+          {editSubmission && (
+            <div className="space-y-4">
+              <Select value={editSubmission.status} onValueChange={(value) => setEditSubmission({...editSubmission, status: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Textarea placeholder="Admin Feedback" value={editSubmission.admin_feedback || ""} onChange={(e) => setEditSubmission({...editSubmission, admin_feedback: e.target.value})} />
+              <Button onClick={() => updateSubmission(editSubmission.id, { status: editSubmission.status, admin_feedback: editSubmission.admin_feedback })}>
+                Update
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Task Dialog */}
+      <Dialog open={!!editTask} onOpenChange={() => setEditTask(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Task</DialogTitle>
+          </DialogHeader>
+          {editTask && (
+            <div className="space-y-4">
+              <Select value={editTask.status} onValueChange={(value) => setEditTask({...editTask, status: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TASK_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={editTask.priority} onValueChange={(value) => setEditTask({...editTask, priority: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Input type="date" value={editTask.due_date || ""} onChange={(e) => setEditTask({...editTask, due_date: e.target.value})} />
+              <Button onClick={() => updateTask(editTask.id, { status: editTask.status, priority: editTask.priority, due_date: editTask.due_date })}>
+                Update
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <StaffInbox />
     </div>
