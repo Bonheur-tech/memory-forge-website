@@ -35,22 +35,23 @@ interface Task {
   id: string;
   title: string;
   description?: string;
-  assigned_to: string;
-  assigned_by?: string;
-  submission_id?: string;
+  assigned_to: string | null;
+  assigned_by?: string | null;
+  submission_id?: string | null;
   status: string;
   priority: string;
-  due_date?: string;
+  due_date?: string | null;
   created_at: string;
 }
 
 interface User {
   user_id: string;
   role: string;
-  email?: string;
+  email?: string | null;
 }
 
 interface ScoreRow {
+  created_at: string;
   submission_id: string;
   innovation: number;
   impact: number;
@@ -73,10 +74,65 @@ interface Report {
   };
 }
 
+interface FetchState {
+  tasksAvailable: boolean;
+  userDirectoryAvailable: boolean;
+}
+
 const CATEGORIES = ["All", "AI & Machine Learning", "Web & Mobile Development", "Cybersecurity"];
 const STATUSES = ["pending", "approved", "rejected", "winner"];
 const PRIORITIES = ["low", "medium", "high"];
 const TASK_STATUSES = ["pending", "in_progress", "completed"];
+
+const REPORT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+const isMissingDbObjectError = (error: unknown) => {
+  if (!error || typeof error !== "object") return false;
+
+  const code = "code" in error ? String(error.code ?? "") : "";
+  const message = "message" in error ? String(error.message ?? "").toLowerCase() : "";
+
+  return (
+    code === "42P01" ||
+    code === "42703" ||
+    code === "PGRST204" ||
+    message.includes("does not exist") ||
+    message.includes("schema cache") ||
+    message.includes("column") ||
+    message.includes("relation")
+  );
+};
+
+const buildReport = (submissions: Submission[], tasks: Task[], scores: { created_at: string }[]): Report => {
+  const recentThreshold = new Date(Date.now() - REPORT_WINDOW_MS);
+
+  return {
+    total_submissions: submissions.length,
+    submissions_by_status: submissions.reduce((acc, sub) => {
+      acc[sub.status] = (acc[sub.status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+    submissions_by_category: submissions.reduce((acc, sub) => {
+      acc[sub.category] = (acc[sub.category] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+    total_tasks: tasks.length,
+    tasks_by_status: tasks.reduce((acc, task) => {
+      acc[task.status] = (acc[task.status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+    tasks_by_priority: tasks.reduce((acc, task) => {
+      acc[task.priority] = (acc[task.priority] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+    total_scores: scores.length,
+    recent_activity: {
+      submissions_last_7_days: submissions.filter((sub) => new Date(sub.created_at) > recentThreshold).length,
+      tasks_last_7_days: tasks.filter((task) => new Date(task.created_at) > recentThreshold).length,
+      scores_last_7_days: scores.filter((score) => new Date(score.created_at) > recentThreshold).length,
+    },
+  };
+};
 
 // ── Category stats card ───────────────────────────────────────────────────────
 
@@ -109,8 +165,8 @@ const CoordinatorDashboard = () => {
   const [tasks, setTasks]             = useState<Task[]>([]);
   const [users, setUsers]             = useState<User[]>([]);
   const [scores, setScores]           = useState<ScoreRow[]>([]);
-  const [report, setReport]           = useState<Report | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
+  const [fetchState, setFetchState]   = useState<FetchState>({ tasksAvailable: true, userDirectoryAvailable: true });
   const [activeTab, setActiveTab]     = useState<"overview" | "submissions" | "tasks" | "assign" | "report">("overview");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [search, setSearch]           = useState("");
@@ -127,6 +183,8 @@ const CoordinatorDashboard = () => {
     priority: "medium",
     due_date: ""
   });
+
+  const report = useMemo(() => buildReport(submissions, tasks, scores), [submissions, tasks, scores]);
 
   useEffect(() => {
     const el = document.documentElement;
@@ -153,76 +211,67 @@ const CoordinatorDashboard = () => {
       const [subRes, taskRes, userRes, scoreRes] = await Promise.all([
         supabase.from("submissions").select("*").order("created_at", { ascending: false }),
         supabase.from("tasks").select("*").order("created_at", { ascending: false }),
-        supabase.from("user_roles").select("user_id, role, email").eq("role", "user"),
-        supabase.from("project_scores").select("submission_id, innovation, impact, technical_quality, relevance"),
+        supabase.from("user_roles").select("user_id, role, email").in("role", ["user", "super_admin"]),
+        supabase.from("project_scores").select("created_at, submission_id, innovation, impact, technical_quality, relevance"),
       ]);
 
       if (subRes.error) throw subRes.error;
-      if (taskRes.error) throw taskRes.error;
-      if (userRes.error) throw userRes.error;
-      if (scoreRes.error) throw scoreRes.error;
-
       setSubmissions(subRes.data as Submission[]);
-      setTasks(taskRes.data as Task[]);
-      setUsers(userRes.data as User[]);
-      setScores(scoreRes.data as ScoreRow[]);
+
+      const nextFetchState: FetchState = {
+        tasksAvailable: true,
+        userDirectoryAvailable: true,
+      };
+
+      if (taskRes.error) {
+        if (!isMissingDbObjectError(taskRes.error)) throw taskRes.error;
+        nextFetchState.tasksAvailable = false;
+        setTasks([]);
+      } else {
+        setTasks(taskRes.data as Task[]);
+      }
+
+      if (userRes.error) {
+        if (isMissingDbObjectError(userRes.error)) {
+          const fallbackUserRes = await supabase
+            .from("user_roles")
+            .select("user_id, role")
+            .in("role", ["user", "super_admin"]);
+
+          if (fallbackUserRes.error) {
+            nextFetchState.userDirectoryAvailable = false;
+            setUsers([]);
+          } else {
+            setUsers(fallbackUserRes.data as User[]);
+          }
+        } else {
+          nextFetchState.userDirectoryAvailable = false;
+          setUsers([]);
+        }
+      } else {
+        setUsers(userRes.data as User[]);
+      }
+
+      if (scoreRes.error) {
+        setScores([]);
+      } else {
+        setScores(scoreRes.data as ScoreRow[]);
+      }
+
+      setFetchState(nextFetchState);
+
+      if (!nextFetchState.tasksAvailable || !nextFetchState.userDirectoryAvailable) {
+        toast({
+          title: "Coordinator dashboard loaded with limited data.",
+          description: !nextFetchState.tasksAvailable
+            ? "The tasks table is not available in Supabase yet."
+            : "The staff directory is missing some columns, so user assignment options are limited.",
+          variant: "destructive",
+        });
+      }
     } catch (err) {
       console.error("Dashboard fetch failed:", err);
       toast({ title: "Failed to load data.", variant: "destructive" });
-    } finally {
-      setDataLoading(false);
-    }
-  }, [toast]);
-
-  const fetchReport = useCallback(async () => {
-    setDataLoading(true);
-    try {
-      // Fetch data for report directly from Supabase
-      const [subRes, taskRes, scoreRes] = await Promise.all([
-        supabase.from("submissions").select("status, category, created_at"),
-        supabase.from("tasks").select("status, priority, created_at"),
-        supabase.from("project_scores").select("created_at")
-      ]);
-
-      if (subRes.error) throw subRes.error;
-      if (taskRes.error) throw taskRes.error;
-      if (scoreRes.error) throw scoreRes.error;
-
-      const submissions = subRes.data || [];
-      const tasks = taskRes.data || [];
-      const scores = scoreRes.data || [];
-
-      const report = {
-        total_submissions: submissions.length,
-        submissions_by_status: submissions.reduce((acc, sub) => {
-          acc[sub.status] = (acc[sub.status] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-        submissions_by_category: submissions.reduce((acc, sub) => {
-          acc[sub.category] = (acc[sub.category] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-        total_tasks: tasks.length,
-        tasks_by_status: tasks.reduce((acc, task) => {
-          acc[task.status] = (acc[task.status] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-        tasks_by_priority: tasks.reduce((acc, task) => {
-          acc[task.priority] = (acc[task.priority] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-        total_scores: scores.length,
-        recent_activity: {
-          submissions_last_7_days: submissions.filter(s => new Date(s.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length,
-          tasks_last_7_days: tasks.filter(t => new Date(t.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length,
-          scores_last_7_days: scores.filter(s => new Date(s.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length
-        }
-      };
-
-      setReport(report);
-    } catch (err) {
-      console.error("Report fetch failed:", err);
-      toast({ title: "Failed to generate report.", variant: "destructive" });
     } finally {
       setDataLoading(false);
     }
@@ -283,6 +332,15 @@ const CoordinatorDashboard = () => {
   };
 
   const assignTask = async () => {
+    if (!fetchState.tasksAvailable) {
+      toast({
+        title: "Tasks are not available in the database yet.",
+        description: "Run the coordinator Supabase migration before assigning tasks.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from("tasks")
@@ -321,6 +379,15 @@ const CoordinatorDashboard = () => {
     }, {} as Record<string, { score_count: number; total_score: number }>);
   }, [scores]);
 
+  const assigneeLabelMap = useMemo(
+    () =>
+      users.reduce<Record<string, string>>((acc, currentUser) => {
+        acc[currentUser.user_id] = currentUser.email || currentUser.user_id;
+        return acc;
+      }, {}),
+    [users]
+  );
+
   const scoredByCategory = (cat: string) =>
     submissions.filter((s) => s.category === cat && (scoreMap[s.id]?.score_count ?? 0) > 0).length;
 
@@ -355,7 +422,7 @@ const CoordinatorDashboard = () => {
           <span className="font-bold text-sm text-slate-900 dark:text-white">Coordinator Dashboard</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={() => { fetchData(); if (activeTab === "report") fetchReport(); }} disabled={dataLoading}>
+          <Button variant="outline" size="sm" onClick={() => { fetchData(); }} disabled={dataLoading}>
             {dataLoading ? "Loading..." : "Refresh"}
           </Button>
           <span className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">{user?.email}</span>
@@ -384,7 +451,7 @@ const CoordinatorDashboard = () => {
           ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
-              onClick={() => { setActiveTab(key as any); if (key === "report") fetchReport(); }}
+              onClick={() => { setActiveTab(key as any); }}
               className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all flex items-center gap-2 whitespace-nowrap ${
                 activeTab === key
                   ? "bg-purple-600 text-white"
@@ -566,6 +633,11 @@ const CoordinatorDashboard = () => {
 
         {activeTab === "tasks" && (
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+            {!fetchState.tasksAvailable && (
+              <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
+                The `tasks` table is not available in Supabase yet. Apply the coordinator migration to enable task management.
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -582,7 +654,7 @@ const CoordinatorDashboard = () => {
                         <p className="font-medium text-slate-800 dark:text-slate-200">{task.title}</p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">{task.description}</p>
                       </td>
-                      <td className="px-5 py-3.5 text-xs text-slate-600 dark:text-slate-400">{task.assigned_to}</td>
+                      <td className="px-5 py-3.5 text-xs text-slate-600 dark:text-slate-400">{task.assigned_to ? assigneeLabelMap[task.assigned_to] ?? task.assigned_to : "Unassigned"}</td>
                       <td className="px-5 py-3.5">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] ${
                           task.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
@@ -623,6 +695,16 @@ const CoordinatorDashboard = () => {
         {activeTab === "assign" && (
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
             <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Assign New Task</h3>
+            {!fetchState.tasksAvailable && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
+                Task assignment is disabled until the `tasks` table exists in Supabase.
+              </div>
+            )}
+            {!fetchState.userDirectoryAvailable && (
+              <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                The staff directory is partially available. User IDs will be shown where email addresses are missing.
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input placeholder="Task Title" value={newTask.title} onChange={(e) => setNewTask({...newTask, title: e.target.value})} />
               <Select value={newTask.assigned_to} onValueChange={(value) => setNewTask({...newTask, assigned_to: value})}>
@@ -656,13 +738,13 @@ const CoordinatorDashboard = () => {
               <Textarea placeholder="Description" value={newTask.description} onChange={(e) => setNewTask({...newTask, description: e.target.value})} className="md:col-span-2" />
               <Input type="date" placeholder="Due Date" value={newTask.due_date} onChange={(e) => setNewTask({...newTask, due_date: e.target.value})} />
             </div>
-            <Button onClick={assignTask} className="mt-4" disabled={!newTask.title || !newTask.assigned_to}>
+            <Button onClick={assignTask} className="mt-4" disabled={!fetchState.tasksAvailable || !newTask.title || !newTask.assigned_to}>
               <Plus className="h-4 w-4 mr-2" /> Assign Task
             </Button>
           </div>
         )}
 
-        {activeTab === "report" && report && (
+        {activeTab === "report" && (
           <div className="space-y-6">
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Activity Summary Report</h3>
