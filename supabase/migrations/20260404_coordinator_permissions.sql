@@ -114,6 +114,18 @@ DROP POLICY IF EXISTS "Users can update own tasks" ON public.tasks;
 CREATE POLICY "Users can update own tasks" ON public.tasks
   FOR UPDATE USING (auth.uid() = assigned_to) WITH CHECK (auth.uid() = assigned_to);
 
+-- Coordinators can read regular user and super_admin roles so they can assign tasks and use staff inbox
+DROP POLICY IF EXISTS "Coordinators can view user roles" ON public.user_roles;
+CREATE POLICY "Coordinators can view user roles" ON public.user_roles
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.user_roles
+      WHERE user_id = auth.uid()
+        AND role = 'coordinator'
+    )
+    AND role IN ('user', 'super_admin')
+  );
+
 -- ────────────────────────────────────────────────────────────────────────────
 -- 4. UPDATE TRIGGER FOR tasks
 -- ────────────────────────────────────────────────────────────────────────────

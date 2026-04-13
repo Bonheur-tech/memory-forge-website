@@ -3,7 +3,7 @@
  * Coordinators can monitor submissions, update statuses, assign tasks, and generate reports.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LogOut, Cpu, Search, Filter, FileText, CheckCircle2, Clock, BarChart3, Trophy, UserPlus, Edit, FileBarChart, Plus } from "lucide-react";
 import StaffInbox from "@/components/StaffInbox";
 
@@ -47,16 +47,15 @@ interface Task {
 interface User {
   user_id: string;
   role: string;
+  email?: string;
 }
 
-interface RankingRow {
+interface ScoreRow {
   submission_id: string;
-  project_title: string;
-  team_name: string;
-  category: string;
-  avg_score: number;
-  score_count: number;
-  overall_rank: number;
+  innovation: number;
+  impact: number;
+  technical_quality: number;
+  relevance: number;
 }
 
 interface Report {
@@ -109,7 +108,7 @@ const CoordinatorDashboard = () => {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [tasks, setTasks]             = useState<Task[]>([]);
   const [users, setUsers]             = useState<User[]>([]);
-  const [rankings, setRankings]       = useState<RankingRow[]>([]);
+  const [scores, setScores]           = useState<ScoreRow[]>([]);
   const [report, setReport]           = useState<Report | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [activeTab, setActiveTab]     = useState<"overview" | "submissions" | "tasks" | "assign" | "report">("overview");
@@ -120,7 +119,6 @@ const CoordinatorDashboard = () => {
   // Dialog states
   const [editSubmission, setEditSubmission] = useState<Submission | null>(null);
   const [editTask, setEditTask] = useState<Task | null>(null);
-  const [assignDialog, setAssignDialog] = useState(false);
   const [newTask, setNewTask] = useState({
     title: "",
     description: "",
@@ -152,16 +150,22 @@ const CoordinatorDashboard = () => {
   const fetchData = useCallback(async () => {
     setDataLoading(true);
     try {
-      const [subRes, taskRes, userRes, rankRes] = await Promise.all([
+      const [subRes, taskRes, userRes, scoreRes] = await Promise.all([
         supabase.from("submissions").select("*").order("created_at", { ascending: false }),
         supabase.from("tasks").select("*").order("created_at", { ascending: false }),
-        supabase.from("user_roles").select("user_id, role"),
-        (supabase as any).rpc("get_rankings", { p_category: null }),
+        supabase.from("user_roles").select("user_id, role, email").eq("role", "user"),
+        supabase.from("project_scores").select("submission_id, innovation, impact, technical_quality, relevance"),
       ]);
-      if (subRes.data) setSubmissions(subRes.data as Submission[]);
-      if (taskRes.data) setTasks(taskRes.data as Task[]);
-      if (userRes.data) setUsers(userRes.data as User[]);
-      if (rankRes.data) setRankings(rankRes.data as RankingRow[]);
+
+      if (subRes.error) throw subRes.error;
+      if (taskRes.error) throw taskRes.error;
+      if (userRes.error) throw userRes.error;
+      if (scoreRes.error) throw scoreRes.error;
+
+      setSubmissions(subRes.data as Submission[]);
+      setTasks(taskRes.data as Task[]);
+      setUsers(userRes.data as User[]);
+      setScores(scoreRes.data as ScoreRow[]);
     } catch (err) {
       console.error("Dashboard fetch failed:", err);
       toast({ title: "Failed to load data.", variant: "destructive" });
@@ -225,74 +229,100 @@ const CoordinatorDashboard = () => {
   }, [toast]);
 
   const updateSubmission = async (id: string, updates: Partial<Submission>) => {
-    try {
-      const response = await fetch('/functions/v1/coordinator-update', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ type: 'submission', id, updates })
-      });
-      if (response.ok) {
-        toast({ title: "Submission updated successfully." });
-        fetchData();
-        setEditSubmission(null);
-      } else {
-        toast({ title: "Failed to update submission.", variant: "destructive" });
+    const allowedFields = ["status", "admin_feedback"] as const;
+    const filteredUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+      if (allowedFields.includes(key as typeof allowedFields[number])) {
+        acc[key as keyof Submission] = value;
       }
+      return acc;
+    }, {} as Partial<Submission>);
+
+    try {
+      const { data, error } = await supabase
+        .from("submissions")
+        .update(filteredUpdates)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      toast({ title: "Submission updated successfully." });
+      fetchData();
+      setEditSubmission(null);
     } catch (err) {
+      console.error("Submission update failed:", err);
       toast({ title: "Failed to update submission.", variant: "destructive" });
     }
   };
 
   const updateTask = async (id: string, updates: Partial<Task>) => {
-    try {
-      const response = await fetch('/functions/v1/coordinator-update', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ type: 'task', id, updates })
-      });
-      if (response.ok) {
-        toast({ title: "Task updated successfully." });
-        fetchData();
-        setEditTask(null);
-      } else {
-        toast({ title: "Failed to update task.", variant: "destructive" });
+    const allowedFields = ["status", "priority", "due_date"] as const;
+    const filteredUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+      if (allowedFields.includes(key as typeof allowedFields[number])) {
+        acc[key as keyof Task] = value;
       }
+      return acc;
+    }, {} as Partial<Task>);
+
+    try {
+      const { data, error } = await supabase
+        .from("tasks")
+        .update(filteredUpdates)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      toast({ title: "Task updated successfully." });
+      fetchData();
+      setEditTask(null);
     } catch (err) {
+      console.error("Task update failed:", err);
       toast({ title: "Failed to update task.", variant: "destructive" });
     }
   };
 
   const assignTask = async () => {
     try {
-      const response = await fetch('/functions/v1/coordinator-assign', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(newTask)
-      });
-      if (response.ok) {
-        toast({ title: "Task assigned successfully." });
-        fetchData();
-        setAssignDialog(false);
-        setNewTask({ title: "", description: "", assigned_to: "", submission_id: "", priority: "medium", due_date: "" });
-      } else {
-        toast({ title: "Failed to assign task.", variant: "destructive" });
-      }
+      const { data, error } = await supabase
+        .from("tasks")
+        .insert({
+          title: newTask.title,
+          description: newTask.description,
+          assigned_to: newTask.assigned_to || null,
+          assigned_by: user?.id || null,
+          submission_id: newTask.submission_id || null,
+          priority: newTask.priority,
+          due_date: newTask.due_date || null,
+        })
+        .select();
+
+      if (error) throw error;
+      toast({ title: "Task assigned successfully." });
+      fetchData();
+      setNewTask({ title: "", description: "", assigned_to: "", submission_id: "", priority: "medium", due_date: "" });
     } catch (err) {
+      console.error("Task assignment failed:", err);
       toast({ title: "Failed to assign task.", variant: "destructive" });
     }
   };
 
+  const scoreMap = useMemo(() => {
+    return scores.reduce((map, score) => {
+      const total = score.innovation + score.impact + score.technical_quality + score.relevance;
+      const current = map[score.submission_id] ?? { score_count: 0, total_score: 0 };
+      return {
+        ...map,
+        [score.submission_id]: {
+          score_count: current.score_count + 1,
+          total_score: current.total_score + total,
+        },
+      };
+    }, {} as Record<string, { score_count: number; total_score: number }>);
+  }, [scores]);
+
   const scoredByCategory = (cat: string) =>
-    rankings.filter((r) => r.category === cat && r.score_count > 0).length;
+    submissions.filter((s) => s.category === cat && (scoreMap[s.id]?.score_count ?? 0) > 0).length;
 
   const filteredSubmissions = submissions.filter((s) => {
     const matchCat = categoryFilter === "All" || s.category === categoryFilter;
@@ -601,7 +631,7 @@ const CoordinatorDashboard = () => {
                 </SelectTrigger>
                 <SelectContent>
                   {users.filter(u => u.role === 'user').map(u => (
-                    <SelectItem key={u.user_id} value={u.user_id}>{u.user_id}</SelectItem>
+                    <SelectItem key={u.user_id} value={u.user_id}>{u.email ?? u.user_id}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
