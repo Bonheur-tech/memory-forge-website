@@ -171,22 +171,56 @@ const CoordinatorDashboard = () => {
   }, [toast]);
 
   const fetchReport = useCallback(async () => {
+    setDataLoading(true);
     try {
-      const response = await fetch('/functions/v1/coordinator-report', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-          'Content-Type': 'application/json'
+      // Fetch data for report directly from Supabase
+      const [subRes, taskRes, scoreRes] = await Promise.all([
+        supabase.from("submissions").select("status, category, created_at"),
+        supabase.from("tasks").select("status, priority, created_at"),
+        supabase.from("project_scores").select("created_at")
+      ]);
+
+      if (subRes.error) throw subRes.error;
+      if (taskRes.error) throw taskRes.error;
+      if (scoreRes.error) throw scoreRes.error;
+
+      const submissions = subRes.data || [];
+      const tasks = taskRes.data || [];
+      const scores = scoreRes.data || [];
+
+      const report = {
+        total_submissions: submissions.length,
+        submissions_by_status: submissions.reduce((acc, sub) => {
+          acc[sub.status] = (acc[sub.status] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        submissions_by_category: submissions.reduce((acc, sub) => {
+          acc[sub.category] = (acc[sub.category] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        total_tasks: tasks.length,
+        tasks_by_status: tasks.reduce((acc, task) => {
+          acc[task.status] = (acc[task.status] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        tasks_by_priority: tasks.reduce((acc, task) => {
+          acc[task.priority] = (acc[task.priority] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        total_scores: scores.length,
+        recent_activity: {
+          submissions_last_7_days: submissions.filter(s => new Date(s.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length,
+          tasks_last_7_days: tasks.filter(t => new Date(t.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length,
+          scores_last_7_days: scores.filter(s => new Date(s.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length
         }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setReport(data);
-      } else {
-        toast({ title: "Failed to generate report.", variant: "destructive" });
-      }
+      };
+
+      setReport(report);
     } catch (err) {
+      console.error("Report fetch failed:", err);
       toast({ title: "Failed to generate report.", variant: "destructive" });
+    } finally {
+      setDataLoading(false);
     }
   }, [toast]);
 
@@ -291,6 +325,9 @@ const CoordinatorDashboard = () => {
           <span className="font-bold text-sm text-slate-900 dark:text-white">Coordinator Dashboard</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => { fetchData(); if (activeTab === "report") fetchReport(); }} disabled={dataLoading}>
+            {dataLoading ? "Loading..." : "Refresh"}
+          </Button>
           <span className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">{user?.email}</span>
           <button
             onClick={() => setDarkMode((d) => !d)}
@@ -361,6 +398,57 @@ const CoordinatorDashboard = () => {
                   scoredCount={scoredByCategory(cat)}
                 />
               ))}
+            </div>
+
+            {/* Recent Activity */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Recent Submissions</h3>
+                <div className="space-y-3">
+                  {submissions.slice(0, 5).map((sub) => (
+                    <div key={sub.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                      <div>
+                        <p className="font-medium text-slate-800 dark:text-slate-200">{sub.project_title}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{sub.full_name} • {new Date(sub.created_at).toLocaleDateString()}</p>
+                      </div>
+                      <span className={`px-2 py-1 rounded-full text-xs ${
+                        sub.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
+                        sub.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                        'bg-slate-100 text-slate-700'
+                      }`}>
+                        {sub.status}
+                      </span>
+                    </div>
+                  ))}
+                  {submissions.length === 0 && (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No submissions yet.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Recent Tasks</h3>
+                <div className="space-y-3">
+                  {tasks.slice(0, 5).map((task) => (
+                    <div key={task.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                      <div>
+                        <p className="font-medium text-slate-800 dark:text-slate-200">{task.title}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Assigned to: {task.assigned_to} • {new Date(task.created_at).toLocaleDateString()}</p>
+                      </div>
+                      <span className={`px-2 py-1 rounded-full text-xs ${
+                        task.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                        task.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                        'bg-slate-100 text-slate-700'
+                      }`}>
+                        {task.status}
+                      </span>
+                    </div>
+                  ))}
+                  {tasks.length === 0 && (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No tasks yet.</p>
+                  )}
+                </div>
+              </div>
             </div>
           </>
         )}
